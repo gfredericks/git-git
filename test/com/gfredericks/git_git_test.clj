@@ -37,6 +37,18 @@
       (is (= (get repos "foo")
              {:remotes {"origin" "/not-a-real-git-repo/foo.git"}})))))
 
+(deftest update-from-local-with-dotted-repo-name-test
+  (create-git-repo "core.logic")
+  (let [file (fs/temp-file "git-git-test-config-")]
+    (assert fs/*cwd*)
+    (update-from-local {:dir fs/*cwd*
+                        :file file})
+    (let [{repos :repos} (-> file slurp edn/read-string)]
+      (is (= 1 (count repos)))
+      (is (= (get repos "core.logic")
+             {:remotes {"origin" "/not-a-real-git-repo/core.logic.git"}})))))
+
+
 (deftest sync-to-local-test
   (let [tmpdir (fs/temp-dir "this-and-that")
         _ (fs/with-cwd tmpdir

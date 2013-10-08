@@ -41,7 +41,7 @@
         (map (partial fs/file dir))
         (filter git-repo?)
         (map (fn [dir]
-               [(fs/name dir) (read-repo-data dir)]))
+               [(fs/base-name dir) (read-repo-data dir)]))
         (into {}))})
 
 (defn update-from-local
