@@ -2,7 +2,7 @@
   (:require [clojure.java.io :as io]
             [clojure.pprint :as pp]
             [clojure.string :as s]
-            [com.gfredericks.git-git.util :refer [canonize]]
+            [com.gfredericks.git-git.util :refer [canonize pdoseq]]
             [me.raynes.fs :as fs]
             [me.raynes.conch :refer [programs with-programs let-programs]]
             [robert.hooke :refer [add-hook]])
@@ -59,7 +59,7 @@
 
 (defn sync-to-local*
   [data cfg]
-  (doseq [[repo-name data] (:repos data)]
+  (pdoseq [[repo-name data] (:repos data)]
     (sync-to-local** (fs/file (:dir cfg) repo-name) data)))
 
 (defn sync-to-local
