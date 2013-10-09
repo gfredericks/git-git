@@ -8,12 +8,17 @@
             [robert.hooke :refer [add-hook]])
   (:gen-class))
 
-(programs git)
-(add-hook #'git ::log
-          (fn [orig & [verb :as args]]
-            (when-not (#{"remote"} verb)
-              (println (cons 'git (take-while string? args))))
-            (apply orig args)))
+(let-programs [git* "git"]
+  (defn git [& args]
+    (when (not (#{"fetch"} (first args)))
+      (apply println "git" (take-while string? args)))
+    (let [{:keys [exit-code stderr]}
+          (apply git* (concat args
+                              [{:verbose true}]))]
+      (when (pos? @exit-code)
+        (throw (ex-info "Git subprocess failed!"
+                        {:command-args args
+                         :stderr stderr}))))))
 
 (defn git-repo?
   [dir]
