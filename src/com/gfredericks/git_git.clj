@@ -10,15 +10,16 @@
 
 (let-programs [git* "git"]
   (defn git [& args]
-    (when (not (#{"fetch"} (first args)))
+    (when (not (#{"remote" "fetch"} (first args)))
       (apply println "git" (take-while string? args)))
-    (let [{:keys [exit-code stderr]}
+    (let [{:keys [exit-code stderr stdout]}
           (apply git* (concat args
                               [{:verbose true}]))]
       (when (pos? @exit-code)
         (throw (ex-info "Git subprocess failed!"
                         {:command-args args
-                         :stderr stderr}))))))
+                         :stderr stderr})))
+      stdout)))
 
 (defn git-repo?
   [dir]
@@ -58,9 +59,19 @@
 
 (defn sync-to-local**
   [dir data]
-  (if (fs/exists? dir)
-    (git "fetch" :dir dir)
-    (git "clone" (get-in data [:remotes "origin"]) (str dir) :dir (fs/parent dir))))
+  (when-not (fs/exists? dir)
+    (git "clone" (get-in data [:remotes "origin"]) (str dir) :dir (fs/parent dir)))
+  (let [existing-remotes (read-remotes dir)]
+    (doseq [[name url] existing-remotes
+            :let [url-in-file (get-in data [:remotes name])]]
+      (if (= url url-in-file)
+        (git "fetch" name :dir dir)
+        (throw (ex-info "Mismatching remotes urls!" {:remote-name name,
+                                                     :in-repo url,
+                                                     :in-file url-in-file}))))
+    (doseq [[name url] (remove (comp existing-remotes key) (:remotes data))]
+      (git "remote" "add" name url :dir dir)
+      (git "fetch" name :dir dir))))
 
 (defn sync-to-local*
   [data cfg]

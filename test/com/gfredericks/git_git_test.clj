@@ -1,7 +1,8 @@
 (ns com.gfredericks.git-git-test
   (:require [clojure.edn :as edn]
             [clojure.test :refer :all]
-            [com.gfredericks.git-git :refer [sync-to-local update-from-local]]
+            [com.gfredericks.git-git :refer [sync-to-local update-from-local]
+                                     :as git-git]
             [me.raynes.fs :as fs]
             [me.raynes.conch :refer [programs with-programs let-programs]]))
 
@@ -70,3 +71,20 @@
     (let [f (fs/file "foobert" "poopsticks.txt")]
       (is (fs/exists? f))
       (is (= "this is my code" (slurp f))))))
+
+(deftest roundtrip-test
+  (let [tmpdir (fs/temp-dir "this-and-that")]
+    (fs/with-cwd tmpdir
+      (create-git-repo "fazzle")
+      (fs/with-cwd (fs/file tmpdir "fazzle")
+        (spit (fs/file "poopsticks.txt") "this is my code")
+        (git "add" "poopsticks.txt" :dir fs/*cwd*)
+        (git "commit" "-a" "-m" "Making a commit in my test" :dir fs/*cwd*)))
+    (let [data {:repos
+                {"foobert"
+                 {:remotes
+                  {"origin" (str tmpdir "/" "fazzle")
+                   "other-remote" (str tmpdir "/" "fazzle")}}}}
+          cfg {:dir fs/*cwd*}]
+      (git-git/sync-to-local* data cfg)
+      (is (= data (git-git/read-repo-directory-data cfg))))))
