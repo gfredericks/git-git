@@ -109,10 +109,12 @@ cfg: some-dir (config defaults to some-dir/.git-git.clj)
 
 (defn -main
   [& [verb & cfgs :as args]]
-  (let [f (dispatch verb)]
-    (if (or (empty? args) (nil? f))
-      (println usage)
-      (doseq [cfg (parse-config-args cfgs)]
-        (println (format "Processing %s..." (str (:dir cfg))))
-        (f cfg))))
-  (shutdown-agents))
+  (try
+    (let [f (dispatch verb)]
+      (if (or (empty? args) (nil? f))
+        (println usage)
+        (doseq [cfg (parse-config-args cfgs)]
+          (println (format "Processing %s..." (str (:dir cfg))))
+          (f cfg))))
+    (finally
+      (shutdown-agents))))
