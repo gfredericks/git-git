@@ -15,7 +15,7 @@
 
 (use-fixtures :each tempdir-fixture)
 
-(programs git)
+(programs git cat)
 
 (defn create-git-repo
   ([dir] (create-git-repo dir (str "/not-a-real-git-repo/" dir ".git")))
@@ -36,7 +36,8 @@
     (let [{repos :repos} (-> file slurp edn/read-string)]
       (is (= 1 (count repos)))
       (is (= (get repos "foo")
-             {:remotes {"origin" "/not-a-real-git-repo/foo.git"}})))))
+             {:remotes {"origin" "/not-a-real-git-repo/foo.git"}
+              :branches {}})))))
 
 (deftest update-from-local-with-dotted-repo-name-test
   (create-git-repo "core.logic")
@@ -47,21 +48,29 @@
     (let [{repos :repos} (-> file slurp edn/read-string)]
       (is (= 1 (count repos)))
       (is (= (get repos "core.logic")
-             {:remotes {"origin" "/not-a-real-git-repo/core.logic.git"}})))))
+             {:remotes {"origin" "/not-a-real-git-repo/core.logic.git"}
+              :branches {}})))))
 
+(defn current-master-sha
+  []
+  (.trim (cat ".git/refs/heads/master" :dir fs/*cwd*)))
 
 (deftest sync-to-local-test
-  (let [tmpdir (fs/temp-dir "this-and-that")
-        _ (fs/with-cwd tmpdir
-            (create-git-repo "fazzle")
-            (fs/with-cwd (fs/file tmpdir "fazzle")
-              (spit (fs/file "poopsticks.txt") "this is my code")
-              (git "add" "poopsticks.txt" :dir fs/*cwd*)
-              (git "commit" "-a" "-m" "Making a commit in my test" :dir fs/*cwd*)))
+  (let [tmpdir (fs/temp-dir "github")
+        master-sha (fs/with-cwd tmpdir
+                     (create-git-repo "fazzle")
+                     (fs/with-cwd (fs/file tmpdir "fazzle")
+                       (spit (fs/file "poopsticks.txt") "this is my code")
+                       (git "add" "poopsticks.txt" :dir fs/*cwd*)
+                       (git "commit" "-a" "-m" "Making a commit in my test" :dir fs/*cwd*)
+                       (current-master-sha)))
+
         data {:repos
               {"foobert"
                {:remotes
-                {"origin" (str tmpdir "/" "fazzle")}}}}
+                {"origin" (str tmpdir "/" "fazzle")}
+                :branches
+                {"master" master-sha}}}}
         file (fs/temp-file "haw-whateuvr")]
     (spit file (pr-str data))
     (sync-to-local
@@ -73,18 +82,21 @@
       (is (= "this is my code" (slurp f))))))
 
 (deftest roundtrip-test
-  (let [tmpdir (fs/temp-dir "this-and-that")]
-    (fs/with-cwd tmpdir
-      (create-git-repo "fazzle")
-      (fs/with-cwd (fs/file tmpdir "fazzle")
-        (spit (fs/file "poopsticks.txt") "this is my code")
-        (git "add" "poopsticks.txt" :dir fs/*cwd*)
-        (git "commit" "-a" "-m" "Making a commit in my test" :dir fs/*cwd*)))
+  (let [tmpdir (fs/temp-dir "github")
+        master-sha (fs/with-cwd tmpdir
+                     (create-git-repo "fazzle")
+                     (fs/with-cwd (fs/file tmpdir "fazzle")
+                       (spit (fs/file "poopsticks.txt") "this is my code")
+                       (git "add" "poopsticks.txt" :dir fs/*cwd*)
+                       (git "commit" "-a" "-m" "Making a commit in my test" :dir fs/*cwd*)
+                       (current-master-sha)))]
     (let [data {:repos
                 {"foobert"
                  {:remotes
                   {"origin" (str tmpdir "/" "fazzle")
-                   "other-remote" (str tmpdir "/" "fazzle")}}}}
+                   "other-remote" (str tmpdir "/" "fazzle")}
+                  :branches
+                  {"master" master-sha}}}}
           cfg {:dir fs/*cwd*}]
       (git-git/sync-to-local* data cfg)
       (is (= data (git-git/read-repo-directory-data cfg))))))

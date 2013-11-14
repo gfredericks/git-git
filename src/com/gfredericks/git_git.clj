@@ -35,9 +35,17 @@
            (map #(vec (take 2 %)))
            (into {}))))
 
+(defn read-branches
+  [dir]
+  (fs/with-cwd (fs/file dir ".git/refs/heads")
+    (into {}
+     (for [branch-name (fs/list-dir fs/*cwd*)]
+       [branch-name (.trim ^String (slurp (fs/file fs/*cwd* branch-name)))]))))
+
 (defn read-repo-data
   [dir]
-  {:remotes (read-remotes dir)})
+  {:remotes (read-remotes dir)
+   :branches (read-branches dir)})
 
 (defn read-repo-directory-data
   [{:keys [dir] :as cfg}]
