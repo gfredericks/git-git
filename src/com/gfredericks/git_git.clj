@@ -103,8 +103,8 @@
 
         differences
         (for [repo-name both
-              :let [local-branches (get-in local-data [repo-name :branches])
-                    registered-branches (get-in registered-data [repo-name :branches])
+              :let [local-branches (get-in local-data [:repos repo-name :branches])
+                    registered-branches (get-in registered-data [:repos repo-name :branches])
 
                     [only-registered only-local both]
                     (diff (keyset registered-branches) (keyset local-branches))
@@ -128,11 +128,11 @@
             differences]
       (printf "Differences in %s:\n" repo-name)
       (when (seq only-local)
-        (println "Branches only in the local repo:" (-> only-local sort prn)))
+        (println "Branches only in the local repo:" (-> only-local sort pr-str)))
       (when (seq only-registered)
-        (println "Branches missing from the local repo:" (-> only-registered sort prn)))
+        (println "Branches missing from the local repo:" (-> only-registered sort pr-str)))
       (when (seq different)
-        (println "Branches at different commits:" (-> different sort prn))))
+        (println "Branches at different commits:" (-> different sort pr-str))))
     (when (seq both)
       (println (count okay) "repos are probably fine."))))
 
