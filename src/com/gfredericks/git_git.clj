@@ -1,5 +1,6 @@
 (ns com.gfredericks.git-git
-  (:require [clojure.java.io :as io]
+  (:require [clojure.data :refer [diff]]
+            [clojure.java.io :as io]
             [clojure.pprint :as pp]
             [clojure.string :as s]
             [com.gfredericks.git-git.util :refer [canonize pdoseq]]
@@ -8,6 +9,8 @@
             [robert.hooke :refer [add-hook]])
   (:gen-class))
 
+;; can't remember why I couldn't use add-hook instead of this
+;; nonsense.
 (let-programs [git* "git"]
   (defn git [& args]
     (when (not (#{"remote" "fetch"} (first args)))
@@ -59,7 +62,7 @@
         (into {}))})
 
 (defn update-from-local
-  [{:keys [file] :as cfg}]
+  [{:keys [file], :as cfg}]
   {:pre [(:dir cfg)]}
   (let [data (read-repo-directory-data cfg)]
     (binding [*out* (io/writer file)]
@@ -87,8 +90,56 @@
     (sync-to-local** (fs/file (:dir cfg) repo-name) data)))
 
 (defn sync-to-local
-  [{:keys [file] :as cfg}]
+  [{:keys [file], :as cfg}]
   (sync-to-local* (-> file slurp read-string) cfg))
+
+
+(defn status*
+  [registered-data local-data]
+  (let [keyset (comp set keys)
+        [only-registered only-local both]
+        (diff (-> registered-data :repos keyset)
+              (-> local-data      :repos keyset))
+
+        differences
+        (for [repo-name both
+              :let [local-branches (get-in local-data [repo-name :branches])
+                    registered-branches (get-in registered-data [repo-name :branches])
+
+                    [only-registered only-local both]
+                    (diff (keyset registered-branches) (keyset local-branches))
+
+                    different-branches (->> both
+                                            (filter #(not= (local-branches %)
+                                                           (registered-branches %))))]]
+          {:repo-name repo-name,
+           :only-local only-local,
+           :only-registered only-registered,
+           :different different-branches})
+
+        [okay differences] ((juxt filter remove)
+                            #(->> % (vals) (remove string?) (apply concat) (empty?))
+                            differences)]
+    (doseq [repo-name (sort only-registered)]
+      (println "Uncloned repo:" repo-name))
+    (doseq [repo-name (sort only-local)]
+      (println "New (unregistered) repo:" repo-name))
+    (doseq [{:keys [repo-name only-local only-registered different]}
+            differences]
+      (printf "Differences in %s:\n" repo-name)
+      (when (seq only-local)
+        (println "Branches only in the local repo:" (-> only-local sort prn)))
+      (when (seq only-registered)
+        (println "Branches missing from the local repo:" (-> only-registered sort prn)))
+      (when (seq different)
+        (println "Branches at different commits:" (-> different sort prn))))
+    (when (seq both)
+      (println (count okay) "repos are probably fine."))))
+
+(defn status
+  [{:keys [file], :as cfg}]
+  (status* (-> file slurp read-string)
+           (read-repo-directory-data cfg)))
 
 ;;;;;;;;;;
 ;; main ;;
@@ -96,7 +147,8 @@
 
 (def dispatch
   {"sync-to-local" sync-to-local
-   "update-from-local" update-from-local})
+   "update-from-local" update-from-local
+   "status" status})
 
 (defn parse-config-args
   [args]
@@ -107,10 +159,12 @@
              (fs/file dir ".git-git.clj"))
      :dir (fs/file dir)}))
 
+;; TODO: use CWD to look for a .git-git.clj amirite
+;; TODO: use environ for settings?
 (def usage
   "Usage:
 
-cmd [sync-to-local | update-from-local] cfgs*
+cmd [status | sync-to-local | update-from-local] cfgs*
 
 cfg: some-dir (config defaults to some-dir/.git-git.clj)
      some-dir:some-config.clj")
