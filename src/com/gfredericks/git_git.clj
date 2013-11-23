@@ -1,55 +1,19 @@
 (ns com.gfredericks.git-git
   (:require [clojure.data :refer [diff]]
-            [clojure.java.io :as io]
+            [clojure.java.io :as jio]
             [clojure.pprint :as pp]
-            [clojure.string :as s]
             [com.gfredericks.git-git.config :as cfg]
+            [com.gfredericks.git-git.io :as io]
             [com.gfredericks.git-git.util :refer [canonize pdoseq]]
-            [me.raynes.fs :as fs]
-            [me.raynes.conch :refer [programs with-programs let-programs]]
-            [robert.hooke :refer [add-hook]])
+            [me.raynes.fs :as fs])
   (:gen-class))
 
-;; can't remember why I couldn't use add-hook instead of this
-;; nonsense.
-(let-programs [git* "git"]
-  (defn git [& args]
-    (when (not (#{"remote" "fetch"} (first args)))
-      (apply println "git" (take-while string? args)))
-    (let [{:keys [exit-code stderr stdout]}
-          (apply git* (concat args
-                              [{:verbose true}]))]
-      (when (pos? @exit-code)
-        (throw (ex-info "Git subprocess failed!"
-                        {:command-args args
-                         :stderr stderr})))
-      stdout)))
 
-(defn git-repo?
-  [dir]
-  (and (fs/directory? dir)
-       (fs/exists? (fs/file dir ".git"))))
-
-(defn read-remotes
-  [dir]
-  (-> (git "remote" "-v" :dir dir)
-      (s/split #"\n")
-      (->> (map #(s/split % #"\s"))
-           (filter #(= "(fetch)" (last %)))
-           (map #(vec (take 2 %)))
-           (into {}))))
-
-(defn read-branches
-  [dir]
-  (fs/with-cwd (fs/file dir ".git/refs/heads")
-    (into {}
-     (for [branch-name (fs/list-dir fs/*cwd*)]
-       [branch-name (.trim ^String (slurp (fs/file fs/*cwd* branch-name)))]))))
 
 (defn read-repo-data
   [dir]
-  {:remotes (read-remotes dir)
-   :branches (read-branches dir)})
+  {:remotes (io/read-remotes dir)
+   :branches (io/read-branches dir)})
 
 (defn read-repo-directory-data
   [{:keys [dir] :as cfg}]
@@ -57,7 +21,7 @@
   {:repos
    (->> (fs/list-dir dir)
         (map (partial fs/file dir))
-        (filter git-repo?)
+        (filter io/git-repo?)
         (map (fn [dir]
                [(fs/base-name dir) (read-repo-data dir)]))
         (into {}))})
@@ -66,24 +30,25 @@
   [{:keys [file], :as cfg}]
   {:pre [(:dir cfg)]}
   (let [data (read-repo-directory-data cfg)]
-    (binding [*out* (io/writer file)]
+    (binding [*out* (jio/writer file)]
       (-> data canonize pp/pprint))))
 
 (defn sync-to-local**
   [dir data]
   (when-not (fs/exists? dir)
-    (git "clone" (get-in data [:remotes "origin"]) (str dir) :dir (fs/parent dir)))
-  (let [existing-remotes (read-remotes dir)]
+    (io/git-clone (get-in data [:remotes "origin"]) dir))
+  (assert (fs/exists? dir))
+  (let [existing-remotes (io/read-remotes dir)]
     (doseq [[name url] existing-remotes
             :let [url-in-file (get-in data [:remotes name])]]
       (if (= url url-in-file)
-        (git "fetch" name :dir dir)
+        (io/git-fetch name dir)
         (throw (ex-info "Mismatching remotes urls!" {:remote-name name,
                                                      :in-repo url,
                                                      :in-file url-in-file}))))
     (doseq [[name url] (remove (comp existing-remotes key) (:remotes data))]
-      (git "remote" "add" name url :dir dir)
-      (git "fetch" name :dir dir))))
+      (io/git-add-remote name url dir)
+      (io/git-fetch name dir))))
 
 (defn sync-to-local*
   [data cfg]

@@ -13,7 +13,12 @@
          (finally
            (fs/delete-dir dir)))))
 
-(use-fixtures :each tempdir-fixture)
+(defn quiet-fixture
+  [test]
+  (binding [com.gfredericks.git-git.io/*quiet?* true]
+    (test)))
+
+(use-fixtures :each tempdir-fixture quiet-fixture)
 
 (programs git cat)
 

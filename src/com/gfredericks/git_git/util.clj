@@ -10,12 +10,12 @@
 
 (defn call-for-each
   [func coll]
-  (let [^ExecutorService tp (Executors/newFixedThreadPool 50)
-        fs (doall (map (fn [x]
-                         (let [^Runnable f #(func x)]
-                           (.submit tp f)))
-                       coll))]
-    (doseq [f fs] (deref f))
+  (let [^ExecutorService tp (Executors/newFixedThreadPool 50)]
+    (->> coll
+         (map (fn [x] (bound-fn [] (func x))))
+         (.invokeAll tp)
+         (map deref)
+         (dorun))
     (.shutdown tp)))
 
 (defmacro pdoseq
