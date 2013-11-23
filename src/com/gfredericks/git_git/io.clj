@@ -17,9 +17,12 @@
   "Hooks a conch function so that it throws on error on failure and
   returns stdout otherwise."
   [f & args]
-  (let [{:keys [exit-code stderr stdout]}
-        ;; do we need to check if the last arg is a map??
-        (apply f (concat args [{:verbose true}]))]
+  (let [args' (if (map? (last args))
+                (concat (butlast args) [(assoc (last args) :verbose true)])
+                (concat args [{:verbose true}]))
+
+        {:keys [exit-code stderr stdout]}
+        (apply f args')]
     (when (pos? @exit-code)
       (throw (ex-info "Subprocess failed!"
                       {:command-args args
@@ -49,12 +52,11 @@
 
 (defn read-remotes
   [dir]
-  (-> (git-RO "remote" "-v" :dir dir)
-      (s/split #"\n")
-      (->> (map #(s/split % #"\s"))
-           (filter #(= "(fetch)" (last %)))
-           (map #(vec (take 2 %)))
-           (into {}))))
+  (->> (git-RO "remote" "-v" {:seq true, :dir dir})
+       (map #(s/split % #"\s"))
+       (filter #(= "(fetch)" (last %)))
+       (map #(vec (take 2 %)))
+       (into {})))
 
 (defn branch->sha
   [repo-dir branch-name]
@@ -105,9 +107,8 @@
   "Checks if the branch in the given repo contains the given SHA."
   [repo-dir branch-name sha-to-check]
   (and (git-repo-has-commit? repo-dir sha-to-check)
-       (let [branchlist (git-RO "branch" "--contains" sha-to-check :dir repo-dir)
-             lines (s/split branchlist #"\n")]
-         (boolean (some #{(str "* " branch-name)} lines)))))
+       (let [branch-bullets (git-RO "branch" "--contains" sha-to-check {:dir repo-dir, :seq true})]
+         (boolean (some #{(str "* " branch-name)} branch-bullets)))))
 
 (defn git-branch
   [repo-dir branch-name start-sha]
