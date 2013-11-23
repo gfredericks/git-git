@@ -3,6 +3,7 @@
             [clojure.java.io :as io]
             [clojure.pprint :as pp]
             [clojure.string :as s]
+            [com.gfredericks.git-git.config :as cfg]
             [com.gfredericks.git-git.util :refer [canonize pdoseq]]
             [me.raynes.fs :as fs]
             [me.raynes.conch :refer [programs with-programs let-programs]]
@@ -150,33 +151,21 @@
    "update-from-local" update-from-local
    "status" status})
 
-(defn parse-config-args
-  [args]
-  (for [s args
-        :let [[_ dir _ file] (re-matches #"(.*?)(:(.*))?" s)]]
-    {:file (if file
-             (fs/file file)
-             (fs/file dir ".git-git.clj"))
-     :dir (fs/file dir)}))
-
-;; TODO: use CWD to look for a .git-git.clj amirite
-;; TODO: use environ for settings?
 (def usage
   "Usage:
 
-cmd [status | sync-to-local | update-from-local] cfgs*
+cmd [status | sync-to-local | update-from-local]
 
-cfg: some-dir (config defaults to some-dir/.git-git.clj)
-     some-dir:some-config.clj")
+The repo directory and config file will be inferred from
+context, or can be set with the GIT_GIT_DIR and GIT_GIT_FILE
+environment variables respectively.")
+
 
 (defn -main
-  [& [verb & cfgs :as args]]
+  [& [verb]]
   (try
-    (let [f (dispatch verb)]
-      (if (or (empty? args) (nil? f))
-        (println usage)
-        (doseq [cfg (parse-config-args cfgs)]
-          (println (format "Processing %s..." (str (:dir cfg))))
-          (f cfg))))
+    (if-let [f (dispatch verb)]
+      (f (cfg/config))
+      (println usage))
     (finally
       (shutdown-agents))))
