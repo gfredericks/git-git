@@ -1,6 +1,7 @@
 (ns com.gfredericks.git-git-test
   (:require [clojure.edn :as edn]
             [clojure.test :refer :all]
+            [com.gfredericks.git-git.actions :as actions]
             [com.gfredericks.git-git :refer [sync-to-local update-from-local]
                                      :as git-git]
             [me.raynes.fs :as fs]
@@ -103,5 +104,8 @@
                   :branches
                   {"master" master-sha}}}}
           cfg {:dir fs/*cwd*}]
-      (git-git/sync-to-local* data cfg)
-      (is (= data (git-git/read-repo-directory-data cfg))))))
+      (with-redefs [actions/read-registry-file (constantly data)]
+        (git-git/sync-to-local cfg))
+      (let [reg-file (fs/temp-file "git-git-test-")]
+        (git-git/update-from-local (assoc cfg :file reg-file))
+        (is (= data (-> reg-file slurp read-string)))))))

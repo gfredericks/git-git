@@ -56,12 +56,17 @@
            (map #(vec (take 2 %)))
            (into {}))))
 
+(defn branch->sha
+  [repo-dir branch-name]
+  (.trim ^String (slurp (fs/file repo-dir
+                                 ".git/refs/heads"
+                                 branch-name))))
+
 (defn read-branches
   [dir]
-  (fs/with-cwd (fs/file dir ".git/refs/heads")
-    (into {}
-     (for [branch-name (fs/list-dir fs/*cwd*)]
-       [branch-name (.trim ^String (slurp (fs/file fs/*cwd* branch-name)))]))))
+  (into {}
+        (for [branch-name (fs/list-dir (fs/file dir ".git/refs/heads"))]
+          [branch-name (branch->sha dir branch-name)])))
 
 (defn git-clone
   [origin target-dir]
@@ -75,3 +80,52 @@
 (defn git-add-remote
   [remote-name url cwd]
   (git "remote" "add" remote-name url :dir cwd))
+
+(with-programs [git]
+  (defn git-repo-has-commit?
+    "Checks if the git repo has the object"
+    [repo-dir sha-to-check]
+    (let [{:keys [stdout stderr], :as data}
+          (git "cat-file" "-t" sha-to-check
+               :dir repo-dir
+               {:verbose true})]
+      (cond (= "commit\n" stdout) true
+
+            ;; it gives this response for sha prefixes
+            (.contains ^String stderr "Not a valid object name") false
+            ;; and this one for full-length SHAs
+            (.contains ^String stderr "unable to find") false
+
+            :else (throw (ex-info "Confusing response from git-cat-file"
+                                  {:response data
+                                   :repo-dir repo-dir
+                                   :sha-to-check sha-to-check}))))))
+
+(defn git-branch-contains?
+  "Checks if the branch in the given repo contains the given SHA."
+  [repo-dir branch-name sha-to-check]
+  (and (git-repo-has-commit? repo-dir sha-to-check)
+       (let [branchlist (git-RO "branch" "--contains" sha-to-check :dir repo-dir)
+             lines (s/split branchlist #"\n")]
+         (boolean (some #{(str "* " branch-name)} lines)))))
+
+(defn git-branch
+  [repo-dir branch-name start-sha]
+  (git "branch" branch-name start-sha :dir repo-dir))
+
+(defn fast-forward?
+  "Checks if the given branch can be fast-forwarded to the given SHA."
+  [repo-dir branch-name commit-sha]
+  (let [branch-sha (branch->sha repo-dir branch-name)
+        ^String merge-base-sha (git-RO "merge-base"
+                                       branch-name
+                                       commit-sha
+                                       :dir repo-dir)]
+    (.startsWith merge-base-sha branch-sha)))
+
+(defn branch-checked-out?
+  [repo-dir branch-name]
+  (let [s (.trim ^String (slurp (fs/file repo-dir ".git/HEAD")))]
+    ;; I think there might be extreme edge cases where this gives a
+    ;; false positive but who cares
+    (.endsWith s (str "/" branch-name))))

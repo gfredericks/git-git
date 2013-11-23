@@ -1,111 +1,24 @@
 (ns com.gfredericks.git-git
-  (:require [clojure.data :refer [diff]]
-            [clojure.java.io :as jio]
-            [clojure.pprint :as pp]
-            [com.gfredericks.git-git.config :as cfg]
-            [com.gfredericks.git-git.io :as io]
-            [com.gfredericks.git-git.util :refer [canonize pdoseq]]
-            [me.raynes.fs :as fs])
+  (:require [com.gfredericks.git-git.actions :as actions]
+            [com.gfredericks.git-git.config :as cfg])
   (:gen-class))
 
-
-
-(defn read-repo-data
-  [dir]
-  {:remotes (io/read-remotes dir)
-   :branches (io/read-branches dir)})
-
-(defn read-repo-directory-data
-  [{:keys [dir] :as cfg}]
-  {:pre [dir (fs/directory? dir)]}
-  {:repos
-   (->> (fs/list-dir dir)
-        (map (partial fs/file dir))
-        (filter io/git-repo?)
-        (map (fn [dir]
-               [(fs/base-name dir) (read-repo-data dir)]))
-        (into {}))})
-
 (defn update-from-local
-  [{:keys [file], :as cfg}]
-  {:pre [(:dir cfg)]}
-  (let [data (read-repo-directory-data cfg)]
-    (binding [*out* (jio/writer file)]
-      (-> data canonize pp/pprint))))
-
-(defn sync-to-local**
-  [dir data]
-  (when-not (fs/exists? dir)
-    (io/git-clone (get-in data [:remotes "origin"]) dir))
-  (assert (fs/exists? dir))
-  (let [existing-remotes (io/read-remotes dir)]
-    (doseq [[name url] existing-remotes
-            :let [url-in-file (get-in data [:remotes name])]]
-      (if (= url url-in-file)
-        (io/git-fetch name dir)
-        (throw (ex-info "Mismatching remotes urls!" {:remote-name name,
-                                                     :in-repo url,
-                                                     :in-file url-in-file}))))
-    (doseq [[name url] (remove (comp existing-remotes key) (:remotes data))]
-      (io/git-add-remote name url dir)
-      (io/git-fetch name dir))))
-
-(defn sync-to-local*
-  [data cfg]
-  (pdoseq [[repo-name data] (:repos data)]
-    (sync-to-local** (fs/file (:dir cfg) repo-name) data)))
+  [cfg]
+  (->> (actions/determine-actions cfg)
+       (remove actions/effecting-local?)
+       (actions/perform-all cfg)))
 
 (defn sync-to-local
-  [{:keys [file], :as cfg}]
-  (sync-to-local* (-> file slurp read-string) cfg))
-
-
-(defn status*
-  [registered-data local-data]
-  (let [keyset (comp set keys)
-        [only-registered only-local both]
-        (diff (-> registered-data :repos keyset)
-              (-> local-data      :repos keyset))
-
-        differences
-        (for [repo-name both
-              :let [local-branches (get-in local-data [:repos repo-name :branches])
-                    registered-branches (get-in registered-data [:repos repo-name :branches])
-
-                    [only-registered only-local both]
-                    (diff (keyset registered-branches) (keyset local-branches))
-
-                    different-branches (->> both
-                                            (filter #(not= (local-branches %)
-                                                           (registered-branches %))))]]
-          {:repo-name repo-name,
-           :only-local only-local,
-           :only-registered only-registered,
-           :different different-branches})
-
-        [okay differences] ((juxt filter remove)
-                            #(->> % (vals) (remove string?) (apply concat) (empty?))
-                            differences)]
-    (doseq [repo-name (sort only-registered)]
-      (println "Uncloned repo:" repo-name))
-    (doseq [repo-name (sort only-local)]
-      (println "New (unregistered) repo:" repo-name))
-    (doseq [{:keys [repo-name only-local only-registered different]}
-            differences]
-      (printf "Differences in %s:\n" repo-name)
-      (when (seq only-local)
-        (println "Branches only in the local repo:" (-> only-local sort pr-str)))
-      (when (seq only-registered)
-        (println "Branches missing from the local repo:" (-> only-registered sort pr-str)))
-      (when (seq different)
-        (println "Branches at different commits:" (-> different sort pr-str))))
-    (when (seq both)
-      (println (count okay) "repos are probably fine."))))
+  [cfg]
+  (->> (actions/determine-actions cfg)
+       (remove actions/effecting-registry?)
+       (actions/perform-all cfg)))
 
 (defn status
-  [{:keys [file], :as cfg}]
-  (status* (-> file slurp read-string)
-           (read-repo-directory-data cfg)))
+  [cfg]
+  (doseq [act (actions/determine-actions cfg)]
+    (println act)))
 
 ;;;;;;;;;;
 ;; main ;;

@@ -9,6 +9,26 @@
   - Repos in the metadata not present in local
   - Differences in...branch HEADs?
 
+  Need some way to share functionality between status and the other
+  tasks; e.g., something computes the things that need to be done,
+  and status uses that to report...
+
+  Also some way to operate on just one repo.
+
+  Have to figure out the data format.
+
+  #+BEGIN_SRC clojure
+    :types [:unregistered-repo
+            :uncloned-repo
+            :missing-branch
+            :unregistered-branch
+            :branch-behind
+            :branch-ahead]
+
+
+    {:type ...}
+  #+END_SRC
+
 * SHA tracking
   If we commit the HEAD sha of each branch, then we'll be able to tell
   locally if we're at least as up-to-date as the metadata.
