@@ -22,7 +22,7 @@
   []
   (or (repo-dir-from-env)
       (repo-dir-from-cwd)
-      (throw (ex-info "Can't determine repo directory!"))))
+      (throw (ex-info "Can't determine repo directory!" {}))))
 
 (defn determine-config-file
   ""
