@@ -222,13 +222,13 @@
   [cfg registry-data {:keys [repo-name branch-name
                              local-sha registry-sha]}]
   (let [dir (repo-dir cfg repo-name)]
-    (availabalize-commit dir repo-name)
-    (if (io/fast-forward? repo-dir branch-name registry-sha)
-      (if (io/branch-checked-out? repo-dir branch-name)
-        (hard-branch-set dir branch-name registry-sha)
+    (availabalize-commit dir registry-sha)
+    (if (io/fast-forward? dir branch-name registry-sha)
+      (if (io/branch-checked-out? dir branch-name)
         (throw (ex-info "Can't (won't) update branch while checked out!"
                         {:repo-name repo-name
-                         :branch-name branch-name})))
+                         :branch-name branch-name}))
+        (hard-branch-set dir branch-name registry-sha))
       (throw (ex-info "Updating branch requires merge!"
                       {:repo-name repo-name
                        :branch-name branch-name})))))

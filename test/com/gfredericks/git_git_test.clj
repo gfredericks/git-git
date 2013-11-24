@@ -8,6 +8,15 @@
             [me.raynes.conch :refer [programs with-programs let-programs]]
             [robert.hooke :refer [add-hook]]))
 
+(def test-repo-dir (fs/file "test-repos"))
+
+(def temp-file (partial fs/temp-file "git-git-test-"))
+
+(defmacro with-temp-files
+  [locals & body]
+  `(let [~@(interleave locals (repeat `(temp-file)))]
+     ~@body))
+
 (defn update-final-map
   [func coll]
   (if (map? (last coll))
@@ -124,3 +133,34 @@
       (let [reg-file (fs/temp-file "git-git-test-")]
         (git-git/update-from-local (assoc cfg :file reg-file))
         (is (= data (-> reg-file slurp read-string)))))))
+
+(defn with-cloned-test-repo*
+  [repo-name func]
+  (git "clone" (str (fs/file test-repo-dir (str repo-name ".git"))))
+  (fs/with-cwd (fs/file repo-name)
+    (func)))
+
+(defmacro with-cloned-test-repo
+  [repo-name & body]
+  `(with-cloned-test-repo* ~repo-name (fn [] ~@body)))
+
+(deftest unmerged-commits-test
+  (with-cloned-test-repo "poptarts"
+    (with-temp-files [registry]
+      (let [cfg {:file registry, :dir (fs/parent fs/*cwd*)}]
+
+        ;; make sure the initial branch exists
+        (git "checkout" "initial")
+        (git "checkout" "master")
+
+        (update-from-local cfg)
+        (is (= "sprinkles\nfilling\n" (cat "strawberry.txt")))
+        (git "reset" "--hard" "HEAD^")
+        (is (= "sprinkles\n" (cat "strawberry.txt")))
+
+        ;; checkout initial so it can update master
+        (git "checkout" "initial")
+        (sync-to-local cfg)
+        (git "checkout" "master")
+
+        (is (= "sprinkles\nfilling\n" (cat "strawberry.txt")))))))
