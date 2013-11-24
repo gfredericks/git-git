@@ -69,18 +69,23 @@
 ;;;;;;;;;;
 
 (def dispatch
-  {"sync-to-local" sync-to-local
+  {"sync-to-local"     sync-to-local
    "update-from-local" update-from-local
-   "status" status})
+   "status"            status
+   "fetch"             actions/fetch-all})
 
 (def usage
-  "Usage:
+  "Usage: [opts ...] command
+  where command can be:
 
-cmd [status | sync-to-local | update-from-local]
+    status:            show discrepancies between filesystem and registry
+    sync-to-local:     make changes to filesystem
+    update-from-local: make changes to registry
+    fetch:             run `git fetch` in all repos (and all remotes) in the filesystem
 
-The repo directory and config file will be inferred from
-context, or can be set with the GIT_GIT_DIR and GIT_GIT_FILE
-environment variables respectively.")
+  The repo directory and config file will be inferred from
+  context, or can be set with the GIT_GIT_DIR and GIT_GIT_FILE
+  environment variables respectively.")
 
 
 (defn -main
@@ -96,9 +101,9 @@ environment variables respectively.")
     (try
       (if (or (= "help" verb) (nil? f))
         (do
-          (when verb
+          (when (and verb (not= verb "help"))
             (println "Unrecognized command:" verb))
-          (println (str usage "\n\n" help)))
+          (println (str "  " usage "\n\n" help)))
         (binding [cfg/*quiet?* (:quiet opts)
                   cfg/*dry-run?* (:dry-run opts)]
           (f (cfg/config))))

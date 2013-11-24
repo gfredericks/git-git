@@ -48,6 +48,14 @@
   (and (fs/directory? dir)
        (fs/directory? (fs/file dir ".git"))))
 
+(defn existing-repos
+  "Returns a list of subdirectory names that are git repos."
+  [dir]
+  (->> (fs/list-dir dir)
+       (map (partial fs/file dir))
+       (filter git-repo?)
+       (map fs/base-name)))
+
 (defn read-remotes
   [dir]
   (->> (git-RO "remote" "-v" {:seq true, :dir dir})

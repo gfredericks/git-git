@@ -66,13 +66,6 @@
                [(fs/base-name dir) (read-repo-data dir)]))
         (into {}))})
 
-(defn existing-repos
-  [dir]
-  (->> (fs/list-dir dir)
-       (map (partial fs/file dir))
-       (filter io/git-repo?)
-       (map fs/base-name)))
-
 (defn determine-actions-for-branch
   [repo-dir branch-name local-sha registry-sha]
   (when (not= local-sha registry-sha)
@@ -119,7 +112,7 @@
         [unregistered-repos
          uncloned-repos
          common-repos]
-        (diff-sets (existing-repos dir)
+        (diff-sets (io/existing-repos dir)
                    (keys registry-repos))]
     (concat
      (for [repo-name unregistered-repos]
@@ -136,10 +129,6 @@
 ;;;;;;;;;;;;;;;;;
 ;; performance ;;
 ;;;;;;;;;;;;;;;;;
-
-(defn update-registry
-  [func & args]
-  ())
 
 (defmulti perform
   "Returns possibly modified registry data."
@@ -248,3 +237,11 @@
                 (canonize)
                 (pp/pprint)))))))
   :ok)
+
+
+(defn fetch-all
+  [{:keys [dir]}]
+  (pdoseq [repo-name (io/existing-repos dir)]
+    (let [dir (fs/file dir repo-name)]
+      (doseq [[remote-name] (io/read-remotes dir)]
+        (io/git-fetch remote-name dir)))))
