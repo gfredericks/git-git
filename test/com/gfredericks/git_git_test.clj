@@ -5,7 +5,20 @@
             [com.gfredericks.git-git :refer [sync-to-local update-from-local]
                                      :as git-git]
             [me.raynes.fs :as fs]
-            [me.raynes.conch :refer [programs with-programs let-programs]]))
+            [me.raynes.conch :refer [programs with-programs let-programs]]
+            [robert.hooke :refer [add-hook]]))
+
+(defn update-final-map
+  [func coll]
+  (if (map? (last coll))
+    (concat (butlast coll) [(func (last coll))])
+    (concat coll [(func nil)])))
+
+(defn conch-dir-hook
+  "Sets the :dir of a conch fn to fs/*cwd*."
+  [orig-conch-fn & args]
+  (let [args' (update-final-map (fn [m] (merge {:dir fs/*cwd*} m)) args)]
+    (apply orig-conch-fn args')))
 
 (defn tempdir-fixture
   [test]
@@ -22,14 +35,16 @@
 (use-fixtures :each tempdir-fixture quiet-fixture)
 
 (programs git cat)
+(add-hook #'git conch-dir-hook)
+(add-hook #'cat conch-dir-hook)
 
 (defn create-git-repo
   ([dir] (create-git-repo dir (str "/not-a-real-git-repo/" dir ".git")))
   ([dir origin]
      (let [dir (fs/file fs/*cwd* dir)]
        (fs/mkdir dir)
-       (git "init" :dir dir)
-       (git "remote" "add" "origin" origin :dir dir))))
+       (git "init" {:dir dir})
+       (git "remote" "add" "origin" origin {:dir dir}))))
 
 (deftest update-from-local-test
   (is (empty? (fs/list-dir fs/*cwd*)))
@@ -59,7 +74,7 @@
 
 (defn current-master-sha
   []
-  (.trim (cat ".git/refs/heads/master" :dir fs/*cwd*)))
+  (.trim (cat ".git/refs/heads/master")))
 
 (deftest sync-to-local-test
   (let [tmpdir (fs/temp-dir "github")
@@ -67,8 +82,8 @@
                      (create-git-repo "fazzle")
                      (fs/with-cwd (fs/file tmpdir "fazzle")
                        (spit (fs/file "poopsticks.txt") "this is my code")
-                       (git "add" "poopsticks.txt" :dir fs/*cwd*)
-                       (git "commit" "-a" "-m" "Making a commit in my test" :dir fs/*cwd*)
+                       (git "add" "poopsticks.txt")
+                       (git "commit" "-a" "-m" "Making a commit in my test")
                        (current-master-sha)))
 
         data {:repos
@@ -93,8 +108,8 @@
                      (create-git-repo "fazzle")
                      (fs/with-cwd (fs/file tmpdir "fazzle")
                        (spit (fs/file "poopsticks.txt") "this is my code")
-                       (git "add" "poopsticks.txt" :dir fs/*cwd*)
-                       (git "commit" "-a" "-m" "Making a commit in my test" :dir fs/*cwd*)
+                       (git "add" "poopsticks.txt")
+                       (git "commit" "-a" "-m" "Making a commit in my test")
                        (current-master-sha)))]
     (let [data {:repos
                 {"foobert"
