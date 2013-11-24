@@ -88,12 +88,19 @@ environment variables respectively.")
   (let [[opts [verb :as moreargs] help]
         (cli args
              ["-q" "--quiet" "Don't report changes made" :flag true]
-             ["--dry-run" "Report what would be done without doing it" :flag true])]
+             ["--dry-run" "Report what would be done without doing it" :flag true])
+
+        f (dispatch (if (empty? moreargs) "status" verb))]
+    (when (empty? moreargs)
+      (println "(showing status; use the \"help\" command for more options)\n"))
     (try
-      (if-let [f (dispatch verb)]
+      (if (or (= "help" verb) (nil? f))
+        (do
+          (when verb
+            (println "Unrecognized command:" verb))
+          (println (str usage "\n\n" help)))
         (binding [cfg/*quiet?* (:quiet opts)
                   cfg/*dry-run?* (:dry-run opts)]
-          (f (cfg/config)))
-        (println (str usage "\n\n" help)))
+          (f (cfg/config))))
       (finally
         (shutdown-agents)))))
