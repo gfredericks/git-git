@@ -4,6 +4,36 @@
             [com.gfredericks.git-git.config :as cfg])
   (:gen-class))
 
+(defmulti show
+  "Returns a human-friendly description of the action"
+  :type)
+
+(defmethod show ::actions/unmerged-commits
+  [{:keys [branch-name]}]
+  (str "Unmerged commits on: " branch-name))
+
+(defmethod show ::actions/untracked-branch
+  [{:keys [branch-name]}]
+  (str "Untracked branch: " branch-name))
+
+(defmethod show ::actions/uncloned-repo
+  [_]
+  (str "Uncloned!"))
+
+(defmethod show ::actions/unregistered-commits
+  [{:keys [branch-name]}]
+  (str "Unregistered commits on: " branch-name))
+
+(defmethod show ::actions/unregistered-branch
+  [{:keys [branch-name]}]
+  (str "Unregistered branch: " branch-name))
+
+(defmethod show ::actions/unregistered-repo
+  [_]
+  (str "Unregistered!"))
+
+(defmethod show :default [act] (pr-str act))
+
 (defn update-from-local
   [cfg]
   (->> (actions/determine-actions cfg)
@@ -16,10 +46,23 @@
        (remove actions/effecting-registry?)
        (actions/perform-all cfg)))
 
+(defn print-in-a-box
+  [s]
+  (let [line (str \+ (apply str (repeat (+ 2 (count s)) \-)) \+)]
+    (println line)
+    (println \| s \|)
+    (println line)))
+
 (defn status
   [cfg]
-  (doseq [act (actions/determine-actions cfg)]
-    (println act)))
+  (doseq [[repo-name actions]
+          (->> (actions/determine-actions cfg)
+               (group-by :repo-name)
+               (sort-by first))]
+    (print-in-a-box repo-name)
+    (doseq [act actions]
+      (println (show act)))
+    (println)))
 
 ;;;;;;;;;;
 ;; main ;;
