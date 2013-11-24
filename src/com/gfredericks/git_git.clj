@@ -1,5 +1,6 @@
 (ns com.gfredericks.git-git
-  (:require [com.gfredericks.git-git.actions :as actions]
+  (:require [clojure.tools.cli :refer [cli]]
+            [com.gfredericks.git-git.actions :as actions]
             [com.gfredericks.git-git.config :as cfg])
   (:gen-class))
 
@@ -40,10 +41,16 @@ environment variables respectively.")
 
 
 (defn -main
-  [& [verb]]
-  (try
-    (if-let [f (dispatch verb)]
-      (f (cfg/config))
-      (println usage))
-    (finally
-      (shutdown-agents))))
+  [& args]
+  (let [[opts [verb :as moreargs] help]
+        (cli args
+             ["-q" "--quiet" "Don't report changes made" :flag true]
+             ["--dry-run" "Report what would be done without doing it" :flag true])]
+    (try
+      (if-let [f (dispatch verb)]
+        (binding [cfg/*quiet?* (:quiet opts)
+                  cfg/*dry-run?* (:dry-run opts)]
+          (f (cfg/config)))
+        (println (str usage "\n\n" help)))
+      (finally
+        (shutdown-agents)))))

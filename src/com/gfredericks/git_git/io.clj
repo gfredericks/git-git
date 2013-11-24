@@ -1,12 +1,10 @@
 (ns com.gfredericks.git-git.io
   (:refer-clojure :exclude [println])
   (:require [clojure.string :as s]
+            [com.gfredericks.git-git.config :refer [*dry-run?* *quiet?*]]
             [me.raynes.fs :as fs]
             [me.raynes.conch :refer [programs with-programs let-programs]]
             [robert.hooke :refer [add-hook]]))
-
-(def ^:dynamic *dry-run?* false)
-(def ^:dynamic *quiet?* false)
 
 (defn ^:private println
   [& args]

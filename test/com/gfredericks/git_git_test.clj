@@ -38,7 +38,7 @@
 
 (defn quiet-fixture
   [test]
-  (binding [com.gfredericks.git-git.io/*quiet?* true]
+  (binding [com.gfredericks.git-git.config/*quiet?* true]
     (test)))
 
 (use-fixtures :each tempdir-fixture quiet-fixture)

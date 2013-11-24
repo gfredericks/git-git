@@ -7,6 +7,7 @@
                  [me.raynes/conch "0.6.0"]
                  [me.raynes/fs "1.4.5"]
                  [org.clojure/clojure "1.5.1"]
+                 [org.clojure/tools.cli "0.2.4"]
                  [robert/hooke "1.3.0"]]
 
   ;; building

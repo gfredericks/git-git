@@ -210,12 +210,12 @@
                           ".git/refs/heads"
                           branch-name)]
     (assert (fs/exists? ref-file))
-    (when-not io/*quiet?*
+    (when-not cfg/*quiet?*
       (printf "Fast-forwarding branch %s from %s -> %s\n"
               branch-name
               (.trim ^String (slurp ref-file))
               sha))
-    (when-not io/*dry-run?*
+    (when-not cfg/*dry-run?*
       (spit ref-file (str sha "\n")))))
 
 (defmethod perform ::unmerged-commits
@@ -240,7 +240,7 @@
         (reduce (partial perform cfg)
                 registry-data
                 actions)]
-    (when-not io/*dry-run?*
+    (when-not cfg/*dry-run?*
       (when (not= registry-data registry-data')
         (with-open [w (jio/writer registry-file)]
           (binding [*out* w]

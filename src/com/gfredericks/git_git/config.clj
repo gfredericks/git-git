@@ -2,6 +2,9 @@
   (:require [environ.core :refer [env]]
             [me.raynes.fs :as fs]))
 
+(def ^:dynamic *dry-run?* false)
+(def ^:dynamic *quiet?* false)
+
 (defn ^:private repo-dir-from-env
   []
   (some-> (env :git-git-dir)
