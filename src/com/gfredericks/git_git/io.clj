@@ -85,16 +85,18 @@
   (defn git-repo-has-commit?
     "Checks if the git repo has the object"
     [repo-dir sha-to-check]
-    (let [{:keys [stdout stderr], :as data}
+    (let [{:keys [stdout ^String stderr], :as data}
           (git "cat-file" "-t" sha-to-check
                :dir repo-dir
                {:verbose true})]
       (cond (= "commit\n" stdout) true
 
             ;; it gives this response for sha prefixes
-            (.contains ^String stderr "Not a valid object name") false
+            (.contains stderr "Not a valid object name") false
             ;; and this one for full-length SHAs
-            (.contains ^String stderr "unable to find") false
+            (.contains stderr "unable to find") false
+            ;; and this for full lunch SHAs in newer versions
+            (.contains stderr "bad file") false
 
             :else (throw (ex-info "Confusing response from git-cat-file"
                                   {:response data
