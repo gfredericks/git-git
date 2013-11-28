@@ -220,7 +220,8 @@
         (hard-branch-set dir branch-name registry-sha))
       (throw (ex-info "Updating branch requires merge!"
                       {:repo-name repo-name
-                       :branch-name branch-name})))))
+                       :branch-name branch-name}))))
+  registry-data)
 
 (defn perform-all
   [{registry-file :file, :as cfg} actions]
