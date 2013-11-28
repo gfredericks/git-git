@@ -41,6 +41,12 @@ git-git sync-to-local my-project-directory
 
 This API is terrible and hopefully I will think of a better one.
 
+## TODO
+
+- Better error handling
+- Report what repo things are happening in
+- Limit actions to a single repo
+
 ## License
 
 Copyright © 2013 Gary Fredericks
