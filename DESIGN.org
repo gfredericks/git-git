@@ -29,6 +29,10 @@
     {:type ...}
   #+END_SRC
 
+* pulling?
+  - Figure out how to check if WD&index are clean, and then allow a
+    pull of the working directory
+  - Keep failures repo-scoped
 * SHA tracking
   If we commit the HEAD sha of each branch, then we'll be able to tell
   locally if we're at least as up-to-date as the metadata.
