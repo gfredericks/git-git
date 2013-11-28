@@ -29,7 +29,8 @@
     stdout))
 
 (let-programs [git* "git"]
-  (def ^:private git* (vary-meta git* assoc :command-name "git")))
+  (def ^:private git* (vary-meta git* assoc :command-name "git"))
+  (def ^:private git-RO-raw git*))
 (add-hook #'git* ::conch conch-fn-hook)
 
 (defn git
@@ -89,27 +90,26 @@
   [remote-name url cwd]
   (git "remote" "add" remote-name url :dir cwd))
 
-(with-programs [git]
-  (defn git-repo-has-commit?
-    "Checks if the git repo has the object"
-    [repo-dir sha-to-check]
-    (let [{:keys [stdout ^String stderr], :as data}
-          (git "cat-file" "-t" sha-to-check
-               :dir repo-dir
-               {:verbose true})]
-      (cond (= "commit\n" stdout) true
+(defn git-repo-has-commit?
+  "Checks if the git repo has the object"
+  [repo-dir sha-to-check]
+  (let [{:keys [stdout ^String stderr], :as data}
+        (git-RO-raw "cat-file" "-t" sha-to-check
+                    :dir repo-dir
+                    {:verbose true})]
+    (cond (= "commit\n" stdout) true
 
-            ;; it gives this response for sha prefixes
-            (.contains stderr "Not a valid object name") false
-            ;; and this one for full-length SHAs
-            (.contains stderr "unable to find") false
-            ;; and this for full lunch SHAs in newer versions
-            (.contains stderr "bad file") false
+          ;; it gives this response for sha prefixes
+          (.contains stderr "Not a valid object name") false
+          ;; and this one for full-length SHAs
+          (.contains stderr "unable to find") false
+          ;; and this for full lunch SHAs in newer versions
+          (.contains stderr "bad file") false
 
-            :else (throw (ex-info "Confusing response from git-cat-file"
-                                  {:response data
-                                   :repo-dir repo-dir
-                                   :sha-to-check sha-to-check}))))))
+          :else (throw (ex-info "Confusing response from git-cat-file"
+                                {:response data
+                                 :repo-dir repo-dir
+                                 :sha-to-check sha-to-check})))))
 
 (defn git-branch-contains?
   "Checks if the branch in the given repo contains the given SHA."
@@ -138,3 +138,38 @@
     ;; I think there might be extreme edge cases where this gives a
     ;; false positive but who cares
     (.endsWith s (str "/" branch-name))))
+
+(defn ^:private exit-code
+  "Returns true if exit code is 0 and false otherwise."
+  [{:keys [exit-code]}]
+  (zero? @exit-code))
+
+(defn unstaged-changes?
+  [repo-dir]
+  (-> (git-RO-raw "diff" "--exit-code"
+                  {:verbose true, :dir repo-dir})
+      (exit-code)
+      (not)))
+
+(defn staged-changes?
+  [repo-dir]
+  (-> (git-RO-raw "diff" "--cached" "--exit-code"
+                  {:verbose true, :dir repo-dir})
+      (exit-code)
+      (not)))
+
+(defn untracked-files?
+  [repo-dir]
+  (-> (git-RO "ls-files" "--other" "--exclude-standard" {:dir repo-dir})
+      (empty?)
+      (not)))
+
+(defn clean-repo?
+  "Returns true if the repo has no staged or unstaged changes or
+  untracked files."
+  [repo-dir]
+  (not ((some-fn unstaged-changes? staged-changes? untracked-files?) repo-dir)))
+
+(defn git-merge
+  [repo-dir merge-to]
+  (git "merge" merge-to {:dir repo-dir}))

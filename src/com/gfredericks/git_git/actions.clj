@@ -214,9 +214,11 @@
     (availabalize-commit dir registry-sha)
     (if (io/fast-forward? dir branch-name registry-sha)
       (if (io/branch-checked-out? dir branch-name)
-        (throw (ex-info "Can't (won't) update branch while checked out!"
-                        {:repo-name repo-name
-                         :branch-name branch-name}))
+        (if (io/clean-repo? dir)
+          (io/git-merge dir registry-sha)
+          (throw (ex-info "Can't update branch while checked out with dirty repo!"
+                          {:repo-name repo-name
+                           :branch-name branch-name})))
         (hard-branch-set dir branch-name registry-sha))
       (throw (ex-info "Updating branch requires merge!"
                       {:repo-name repo-name
