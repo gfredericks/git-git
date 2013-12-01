@@ -1,16 +1,63 @@
 (ns com.gfredericks.git-git.actions
   "Check what things can be done and do them."
-  (:require [clojure.data :refer [diff]]
+  (:refer-clojure :exclude [assoc-in])
+  (:require [clojure.core.typed :refer :all]
+            [clojure.data :refer [diff]]
             [clojure.java.io :as jio]
             [clojure.pprint :as pp]
             [com.gfredericks.git-git.config :as cfg]
             [com.gfredericks.git-git.io :as io]
-            [com.gfredericks.git-git.util :refer [canonize pdoseq]]
-            [me.raynes.fs :as fs]))
+            [com.gfredericks.git-git.util :refer [assoc-in canonize pdoseq]]
+            [me.raynes.fs :as fs])
+  (:import (clojure.lang ExceptionInfo IPersistentMap IPersistentSet ISeq)
+           (java.io File)))
 
+(def-alias UnmergedCommits
+  (HMap :mandatory {:type         (Value ::unmerged-commits)
+                    :local-sha    io/SHA
+                    :registry-sha io/SHA
+                    :branch-name  io/Branch
+                    :repo-name    String}))
+(def-alias UnregisteredCommits
+  (HMap :mandatory {:type         (Value ::unregistered-commits)
+                    :local-sha    io/SHA
+                    :registry-sha io/SHA
+                    :branch-name  io/Branch
+                    :repo-name    String}))
+(def-alias UnregisteredBranch
+  (HMap :mandatory {:type        (Value ::unregistered-branch)
+                    :branch-name io/Branch
+                    :branch-head io/SHA
+                    :repo-name   String}))
+(def-alias UntrackedBranch
+  (HMap :mandatory {:type        (Value ::untracked-branch)
+                    :branch-name io/Branch
+                    :branch-head io/SHA
+                    :repo-name   String}))
+(def-alias UnregisteredRepo
+  (HMap :mandatory {:type      (Value ::unregistered-repo)
+                    :repo-name String}))
+(def-alias UnclonedRepo
+  (HMap :mandatory {:type      (Value ::uncloned-repo)
+                    :repo-name String}))
+(def-alias Action (U UnregisteredCommits UnmergedCommits
+                     UnregisteredBranch  UntrackedBranch
+                     UnregisteredRepo    UnclonedRepo))
+
+(def-alias RepoRegistry (HMap :mandatory {:branches (IPersistentMap io/Branch io/SHA)
+                                          :remotes (IPersistentMap String String)}))
+(def-alias Registry (HMap :mandatory {:repos (IPersistentMap String RepoRegistry)}))
+
+(ann diff-sets (All [a] [(Seqable a) (Seqable a) ->
+                         (Vector* (IPersistentSet a)
+                                  (IPersistentSet a)
+                                  (IPersistentSet a))]))
 (defn ^:private diff-sets
   [coll1 coll2]
   (diff (set coll1) (set coll2)))
+
+(ann safe-get (All [k v] [(IPersistentMap k v) k -> v]))
+(defn ^:private safe-get [m k] (if-let [e (find m k)] (key e) (throw (ex-info "Can't find key!" {:k k, :m m}))))
 
 ;;;;;;;;;;;
 ;; types ;;
@@ -30,10 +77,12 @@
          ::unregistered-branch
          ::unregistered-repo)
 
+(ann effecting-local? [Action -> Boolean])
 (defmulti effecting-local? :type)
 (defmethod effecting-local? ::effecting-local [_] true)
 (defmethod effecting-local? :default [_] false)
 
+(ann effecting-registry? [Action -> Boolean])
 (defmulti effecting-registry? :type)
 (defmethod effecting-registry? ::effecting-registry [_] true)
 (defmethod effecting-registry? :default [_] false)
@@ -43,6 +92,7 @@
 ;; determination ;;
 ;;;;;;;;;;;;;;;;;;;
 
+(ann read-registry-file [File -> Registry])
 (defn read-registry-file
   [file]
   (when (fs/exists? file)
@@ -66,6 +116,7 @@
                [(fs/base-name dir) (read-repo-data dir)]))
         (into {}))})
 
+(ann determine-actions-for-branch [io/Repo io/Branch io/SHA io/SHA -> (ISeq Action)])
 (defn determine-actions-for-branch
   [repo-dir branch-name local-sha registry-sha]
   (when (not= local-sha registry-sha)
@@ -76,6 +127,7 @@
       :registry-sha registry-sha
       :branch-name branch-name}]))
 
+(ann determine-actions-for-repo [File RepoRegistry -> (ISeq Action)])
 (defn determine-actions-for-repo
   [repo-dir repo-registry-data]
   (let [local-branches (io/read-branches repo-dir)
@@ -87,22 +139,23 @@
         (diff-sets (keys local-branches)
                    (keys registry-branches))]
     (concat
-     (for [branch-name unregistered-branches]
-       {:type ::unregistered-branch
-        :branch-name branch-name
-        :branch-head (get local-branches branch-name)})
-     (for [branch-name unlocal-branches]
-       {:type ::untracked-branch
-        :branch-name branch-name
-        :branch-head (get registry-branches branch-name)})
-     (for [branch-name common-branches
-           action (determine-actions-for-branch
-                   repo-dir
-                   branch-name
-                   (get local-branches branch-name)
-                   (get-in repo-registry-data [:branches branch-name]))]
-       action))))
+     (for> :- Action [branch-name :- io/Branch unregistered-branches]
+           {:type        ::unregistered-branch
+            :branch-name branch-name
+            :branch-head (get local-branches branch-name)})
+     (for> :- Action [branch-name :- io/Branch unlocal-branches]
+           {:type        ::untracked-branch
+            :branch-name branch-name
+            :branch-head (get registry-branches branch-name)})
+     (for> :- Action [branch-name :- io/Branch common-branches
+                      action :- Action (determine-actions-for-branch
+                                        repo-dir
+                                        branch-name
+                                        (get local-branches branch-name)
+                                        (-> repo-registry-data :branches (get branch-name)))]
+           action))))
 
+(ann determine-actions [cfg/Config -> (ISeq Action)])
 (defn determine-actions
   "Returns a collection of actions."
   [{:keys [file dir] :as cfg}]
@@ -115,25 +168,27 @@
         (diff-sets (io/existing-repos dir)
                    (keys registry-repos))]
     (concat
-     (for [repo-name unregistered-repos]
-       {:type ::unregistered-repo
-        :repo-name repo-name})
-     (for [repo-name uncloned-repos]
-       {:type ::uncloned-repo
-        :repo-name repo-name})
-     (for [repo-name common-repos
-           action (determine-actions-for-repo (fs/file dir repo-name)
-                                              (get registry-repos repo-name))]
-       (assoc action :repo-name repo-name)))))
+     (for> :- Action [repo-name :- String unregistered-repos]
+           {:type ::unregistered-repo
+            :repo-name repo-name})
+     (for> :- Action [repo-name :- String uncloned-repos]
+           {:type ::uncloned-repo
+            :repo-name repo-name})
+     (for> :- Action [repo-name :- String common-repos
+                      action :- Action (determine-actions-for-repo (fs/file dir repo-name)
+                                                                   (safe-get registry-repos repo-name))]
+           action #_(assoc action :repo-name repo-name)))))
 
 ;;;;;;;;;;;;;;;;;
 ;; performance ;;
 ;;;;;;;;;;;;;;;;;
 
+(ann ^:yes-check perform [cfg/Config Registry Action -> Registry])
 (defmulti perform
   "Returns possibly modified registry data."
-  (fn [cfg registry-data action] (:type action)))
+  (fn [_cfg _registry-data action] (:type action)))
 
+(ann repo-dir [cfg/Config String -> File])
 (defn repo-dir
   [{:keys [dir]} repo-name]
   (fs/file dir repo-name))
@@ -163,26 +218,30 @@
 
 (defmethod perform ::uncloned-repo
   [cfg registry-data {:keys [repo-name]}]
-  (let [remotes (get-in registry-data [:repos repo-name :remotes])
+  (let [remotes (-> registry-data :repos (get repo-name) :remotes)
         dir (repo-dir cfg repo-name)]
     (if-let [origin (get remotes "origin")]
       (io/git-clone origin dir)
       (throw (ex-info "No origin in registry!" {:repo-name repo-name})))
-    (doseq [[remote-name url] (dissoc remotes "origin")]
+    (doseq> [[remote-name url] :- (Vector* String String) remotes
+             :when (not= remote-name "origin")]
       (io/git-add-remote remote-name url dir)))
   registry-data)
 
+(ann availabalize-commit [io/Repo io/SHA -> nil])
 (defn ^:private availabalize-commit
   "Checks if the sha is in the repo, tries to fetch if not, and
   throws an exception if it can't be found."
   [repo-dir commit-sha]
   (or (io/git-repo-has-commit? repo-dir commit-sha)
-      (doseq [[remote-name _uri] (io/read-remotes repo-dir)]
+      (doseq> [[remote-name _uri] :- (Vector* io/Remote Any)
+               (io/read-remotes repo-dir)]
         (io/git-fetch remote-name repo-dir))
       (io/git-repo-has-commit? repo-dir commit-sha)
       (throw (ex-info "Can't obtain commit!"
                       {:repo-dir repo-dir
-                       :commit-sha commit-sha}))))
+                       :commit-sha commit-sha})))
+  nil)
 
 (defmethod perform ::untracked-branch
   [cfg registry-data {:keys [repo-name branch-name branch-head]
@@ -192,6 +251,11 @@
     (io/git-branch dir branch-name branch-head))
   registry-data)
 
+(ann clojure.core/spit [File String -> nil])
+(ann clojure.core/slurp [File -> String])
+(ann clojure.core/printf [String Any * -> nil])
+(ann me.raynes.fs/exists? [File -> Boolean])
+(ann hard-branch-set [io/Repo io/Branch io/SHA -> nil])
 (defn ^:private hard-branch-set
   "Writes the SHA to the branch's file."
   [repo-dir branch-name sha]
@@ -206,6 +270,8 @@
               sha))
     (when-not cfg/*dry-run?*
       (spit ref-file (str sha "\n")))))
+
+(ann ^:no-check clojure.core/ex-info [String (HMap) -> ExceptionInfo])
 
 (defmethod perform ::unmerged-commits
   [cfg registry-data {:keys [repo-name branch-name
@@ -225,6 +291,8 @@
                        :branch-name branch-name}))))
   registry-data)
 
+;; this one crashes the type checker??!
+(ann ^:no-check perform-all [cfg/Config (ISeq Action) -> nil])
 (defn perform-all
   [{registry-file :file, :as cfg} actions]
   (let [registry-data (read-registry-file registry-file)
@@ -239,12 +307,14 @@
             (-> registry-data'
                 (canonize)
                 (pp/pprint)))))))
-  :ok)
+  nil)
 
+(ann ^:no-check me.raynes.fs/file [Any * -> File])
 
+(ann fetch-all [cfg/Config -> nil])
 (defn fetch-all
   [{:keys [dir]}]
   (pdoseq [repo-name (io/existing-repos dir)]
     (let [dir (fs/file dir repo-name)]
-      (doseq [[remote-name] (io/read-remotes dir)]
+      (doseq> [[remote-name] :- (Vector* String Any *) (io/read-remotes dir)]
         (io/git-fetch remote-name dir)))))

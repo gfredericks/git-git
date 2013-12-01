@@ -1,8 +1,12 @@
 (ns com.gfredericks.git-git.config
-  (:require [environ.core :refer [env]]
+  (:require [clojure.core.typed :refer :all]
+            [environ.core :refer [env]]
             [me.raynes.fs :as fs]))
 
+(ann *dry-run?* Boolean)
 (def ^:dynamic *dry-run?* false)
+
+(ann *quiet?* Boolean)
 (def ^:dynamic *quiet?* false)
 
 (defn ^:private repo-dir-from-env
@@ -30,6 +34,10 @@
   (or (some-> (env :git-git-file) (fs/file))
       (fs/file repo-dir ".git-git.clj")))
 
+(def-alias Config (HMap :mandatory {:dir java.io.File, :file java.io.File}
+                        :complete? true))
+
+(ann config [-> Config])
 (defn config
   "Returns a map with :file and :dir."
   []

@@ -1,9 +1,12 @@
 (ns com.gfredericks.git-git
-  (:require [clojure.tools.cli :refer [cli]]
+  (:require [clojure.core.typed :refer :all]
+            [clojure.tools.cli :refer [cli]]
             [com.gfredericks.git-git.actions :as actions]
             [com.gfredericks.git-git.config :as cfg])
+  (:import (clojure.lang IPersistentMap IPersistentVector ISeq))
   (:gen-class))
 
+(ann show [actions/Action -> String])
 (defmulti show
   "Returns a human-friendly description of the action"
   :type)
@@ -34,18 +37,21 @@
 
 (defmethod show :default [act] (pr-str act))
 
+(ann update-from-local [cfg/Config -> Any])
 (defn update-from-local
   [cfg]
   (->> (actions/determine-actions cfg)
        (remove actions/effecting-local?)
        (actions/perform-all cfg)))
 
+(ann sync-to-local [cfg/Config -> Any])
 (defn sync-to-local
   [cfg]
   (->> (actions/determine-actions cfg)
        (remove actions/effecting-registry?)
        (actions/perform-all cfg)))
 
+(ann print-in-a-box [String -> nil])
 (defn print-in-a-box
   [s]
   (let [line (str \+ (apply str (repeat (+ 2 (count s)) \-)) \+)]
@@ -53,14 +59,21 @@
     (println \| s \|)
     (println line)))
 
+(ann ^:no-check clojure.core/group-by
+     (All [a b] [[a -> b] (Seqable a) -> (IPersistentMap b (IPersistentVector a))]))
+(ann ^:no-check clojure.core/sort-by
+     ;; Ignoring the 3-arity case here
+     (All [a b] [[a -> b] (Seqable a) -> (ISeq a)]))
+
+(ann ^:no-check status [cfg/Config -> Any]) ; can't figure this one out
 (defn status
   [cfg]
-  (doseq [[repo-name actions]
-          (->> (actions/determine-actions cfg)
-               (group-by :repo-name)
-               (sort-by first))]
+  (doseq> [[repo-name actions] :- (clojure.lang.IMapEntry String (IPersistentVector actions/Action))
+           (->> (actions/determine-actions cfg)
+                (group-by :repo-name)
+                (sort-by first))]
     (print-in-a-box repo-name)
-    (doseq [act actions]
+    (doseq> [act :- actions/Action actions]
       (println (show act)))
     (println)))
 
@@ -68,12 +81,14 @@
 ;; main ;;
 ;;;;;;;;;;
 
+(ann dispatch (IPersistentMap String [cfg/Config -> Any]))
 (def dispatch
   {"sync-to-local"     sync-to-local
    "update-from-local" update-from-local
    "status"            status
    "fetch"             actions/fetch-all})
 
+(ann usage String)
 (def usage
   "Usage: [opts ...] command
   where command can be:
@@ -87,7 +102,7 @@
   context, or can be set with the GIT_GIT_DIR and GIT_GIT_FILE
   environment variables respectively.")
 
-
+(ann ^:no-check -main [String * -> Any])
 (defn -main
   [& args]
   (let [[opts [verb :as moreargs] help]

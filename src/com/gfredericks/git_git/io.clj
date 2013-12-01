@@ -1,10 +1,18 @@
 (ns com.gfredericks.git-git.io
   (:refer-clojure :exclude [println])
-  (:require [clojure.string :as s]
+  (:require [clojure.core.typed :refer :all]
+            [clojure.string :as s]
             [com.gfredericks.git-git.config :refer [*dry-run?* *quiet?*]]
             [me.raynes.fs :as fs]
             [me.raynes.conch :refer [programs with-programs let-programs]]
-            [robert.hooke :refer [add-hook]]))
+            [robert.hooke :refer [add-hook]])
+  (:import (clojure.lang IPersistentMap ISeq)
+           (java.io File)))
+
+(def-alias Repo File)
+(def-alias Branch String)
+(def-alias Remote String) ; is this the name or the URL??
+(def-alias SHA String)
 
 (defn ^:private println
   [& args]
@@ -49,6 +57,7 @@
   (and (fs/directory? dir)
        (fs/directory? (fs/file dir ".git"))))
 
+(ann existing-repos [File -> (ISeq String)])
 (defn existing-repos
   "Returns a list of subdirectory names that are git repos."
   [dir]
@@ -57,6 +66,8 @@
        (filter git-repo?)
        (map fs/base-name)))
 
+(ann read-remotes
+     [File -> (IPersistentMap String String)])
 (defn read-remotes
   [dir]
   (->> (git-RO "remote" "-v" {:seq true, :dir dir})
@@ -71,25 +82,30 @@
                                  ".git/refs/heads"
                                  branch-name))))
 
+(ann read-branches [Repo -> (IPersistentMap Branch SHA)])
 (defn read-branches
   [dir]
   (into {}
         (for [branch-name (fs/list-dir (fs/file dir ".git/refs/heads"))]
           [branch-name (branch->sha dir branch-name)])))
 
+(ann git-clone [String File -> nil])
 (defn git-clone
   [origin target-dir]
   ;; I don't think we need to set :dir here
   (git "clone" origin (str target-dir)))
 
+(ann git-fetch [String File -> nil])
 (defn git-fetch
   [remote-name cwd]
   (git "fetch" remote-name :dir cwd))
 
+(ann git-add-remote [String String File -> nil])
 (defn git-add-remote
   [remote-name url cwd]
   (git "remote" "add" remote-name url :dir cwd))
 
+(ann git-repo-has-commit? [Repo SHA -> Boolean])
 (defn git-repo-has-commit?
   "Checks if the git repo has the object"
   [repo-dir sha-to-check]
@@ -107,8 +123,8 @@
           (.contains stderr "bad file") false
 
           :else (throw (ex-info "Confusing response from git-cat-file"
-                                {:response data
-                                 :repo-dir repo-dir
+                                {:response     data
+                                 :repo-dir     repo-dir
                                  :sha-to-check sha-to-check})))))
 
 (defn git-branch-contains?
@@ -118,10 +134,12 @@
        (let [branch-bullets (git-RO "branch" "--contains" sha-to-check {:dir repo-dir, :seq true})]
          (boolean (some #{(str "* " branch-name)} branch-bullets)))))
 
+(ann git-branch [Repo Branch SHA -> nil])
 (defn git-branch
   [repo-dir branch-name start-sha]
   (git "branch" branch-name start-sha :dir repo-dir))
 
+(ann fast-forward? [Repo Branch SHA -> Boolean])
 (defn fast-forward?
   "Checks if the given branch can be fast-forwarded to the given SHA."
   [repo-dir branch-name commit-sha]
@@ -132,6 +150,7 @@
                                        :dir repo-dir)]
     (.startsWith merge-base-sha branch-sha)))
 
+(ann branch-checked-out? [Repo Branch -> Boolean])
 (defn branch-checked-out?
   [repo-dir branch-name]
   (let [s (.trim ^String (slurp (fs/file repo-dir ".git/HEAD")))]
@@ -164,12 +183,14 @@
       (empty?)
       (not)))
 
+(ann clean-repo? [Repo -> Boolean])
 (defn clean-repo?
   "Returns true if the repo has no staged or unstaged changes or
   untracked files."
   [repo-dir]
   (not ((some-fn unstaged-changes? staged-changes? untracked-files?) repo-dir)))
 
+(ann git-merge [Repo SHA -> nil])
 (defn git-merge
   [repo-dir merge-to]
   (git "merge" merge-to {:dir repo-dir}))
