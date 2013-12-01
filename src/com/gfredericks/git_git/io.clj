@@ -103,7 +103,7 @@
           (.contains stderr "Not a valid object name") false
           ;; and this one for full-length SHAs
           (.contains stderr "unable to find") false
-          ;; and this for full lunch SHAs in newer versions
+          ;; and this for full-length SHAs in newer versions
           (.contains stderr "bad file") false
 
           :else (throw (ex-info "Confusing response from git-cat-file"
