@@ -9,7 +9,7 @@
             [com.gfredericks.git-git.io :as io]
             [com.gfredericks.git-git.util :refer [assoc-in canonize pdoseq]]
             [me.raynes.fs :as fs])
-  (:import (clojure.lang ExceptionInfo IPersistentMap IPersistentSet ISeq)
+  (:import (clojure.lang ExceptionInfo IPersistentCollection IPersistentMap IPersistentSet ISeq)
            (java.io File)))
 
 (def-alias UnmergedCommits
@@ -116,20 +116,27 @@
                [(fs/base-name dir) (read-repo-data dir)]))
         (into {}))})
 
-(ann determine-actions-for-branch [io/Repo io/Branch io/SHA io/SHA -> (ISeq Action)])
+(ann determine-actions-for-branch [String io/Repo io/Branch io/SHA io/SHA -> (IPersistentCollection Action)])
 (defn determine-actions-for-branch
-  [repo-dir branch-name local-sha registry-sha]
-  (when (not= local-sha registry-sha)
-    [{:type (if (io/git-branch-contains? repo-dir branch-name registry-sha)
-              ::unregistered-commits
-              ::unmerged-commits)
-      :local-sha local-sha
-      :registry-sha registry-sha
-      :branch-name branch-name}]))
+  [repo-name repo-dir branch-name local-sha registry-sha]
+  (if (not= local-sha registry-sha)
+    ;; this is horrendous
+    (if (io/git-branch-contains? repo-dir branch-name registry-sha)
+        [{:type         ::unregistered-commits
+          :local-sha    local-sha
+          :registry-sha registry-sha
+          :branch-name  branch-name
+          :repo-name    repo-name}]
+        [{:type         ::unmerged-commits
+          :local-sha    local-sha
+          :registry-sha registry-sha
+          :branch-name  branch-name
+          :repo-name    repo-name}])
+    []))
 
-(ann determine-actions-for-repo [File RepoRegistry -> (ISeq Action)])
+(ann determine-actions-for-repo [String File RepoRegistry -> (ISeq Action)])
 (defn determine-actions-for-repo
-  [repo-dir repo-registry-data]
+  [repo-name repo-dir repo-registry-data]
   (let [local-branches (io/read-branches repo-dir)
         registry-branches (:branches repo-registry-data)
 
@@ -142,17 +149,20 @@
      (for> :- Action [branch-name :- io/Branch unregistered-branches]
            {:type        ::unregistered-branch
             :branch-name branch-name
-            :branch-head (get local-branches branch-name)})
+            :branch-head (safe-get local-branches branch-name)
+            :repo-name   repo-name})
      (for> :- Action [branch-name :- io/Branch unlocal-branches]
            {:type        ::untracked-branch
             :branch-name branch-name
-            :branch-head (get registry-branches branch-name)})
+            :branch-head (safe-get registry-branches branch-name)
+            :repo-name   repo-name})
      (for> :- Action [branch-name :- io/Branch common-branches
                       action :- Action (determine-actions-for-branch
+                                        repo-name
                                         repo-dir
                                         branch-name
-                                        (get local-branches branch-name)
-                                        (-> repo-registry-data :branches (get branch-name)))]
+                                        (safe-get local-branches branch-name)
+                                        (safe-get registry-branches branch-name))]
            action))))
 
 (ann determine-actions [cfg/Config -> (ISeq Action)])
@@ -175,9 +185,10 @@
            {:type ::uncloned-repo
             :repo-name repo-name})
      (for> :- Action [repo-name :- String common-repos
-                      action :- Action (determine-actions-for-repo (fs/file dir repo-name)
+                      action :- Action (determine-actions-for-repo repo-name
+                                                                   (fs/file dir repo-name)
                                                                    (safe-get registry-repos repo-name))]
-           action #_(assoc action :repo-name repo-name)))))
+           action))))
 
 ;;;;;;;;;;;;;;;;;
 ;; performance ;;
