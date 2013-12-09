@@ -94,17 +94,21 @@
 
 (ann read-registry-file [File -> Registry])
 (defn read-registry-file
+  "Returns the registry from the file if it exists, or an empty registry otherwise."
   [file]
-  (when (fs/exists? file)
+  (if (fs/exists? file)
     (with-open [r (jio/reader file)
                 r' (java.io.PushbackReader. r)]
-      (read r' false nil))))
+      (read r' false nil))
+    {:repos {}}))
 
+(ann read-repo-data [io/Repo -> RepoRegistry])
 (defn read-repo-data
   [dir]
   {:remotes (io/read-remotes dir)
    :branches (io/read-branches dir)})
 
+(ann read-repo-directory-data [cfg/Config -> Registry])
 (defn read-repo-directory-data
   [{:keys [dir] :as cfg}]
   {:pre [dir (fs/directory? dir)]}
@@ -112,7 +116,7 @@
    (->> (fs/list-dir dir)
         (map (partial fs/file dir))
         (filter io/git-repo?)
-        (map (fn [dir]
+        (map (fn> [dir :- io/Repo]
                [(fs/base-name dir) (read-repo-data dir)]))
         (into {}))})
 
@@ -265,7 +269,6 @@
 (ann clojure.core/spit [File String -> nil])
 (ann clojure.core/slurp [File -> String])
 (ann clojure.core/printf [String Any * -> nil])
-(ann me.raynes.fs/exists? [File -> Boolean])
 (ann hard-branch-set [io/Repo io/Branch io/SHA -> nil])
 (defn ^:private hard-branch-set
   "Writes the SHA to the branch's file."
@@ -329,3 +332,10 @@
     (let [dir (fs/file dir repo-name)]
       (doseq> [[remote-name] :- (Vector* String Any *) (io/read-remotes dir)]
         (io/git-fetch remote-name dir)))))
+
+
+;; fs annotations
+(ann me.raynes.fs/exists? [File -> Boolean])
+(ann ^:no-check me.raynes.fs/list-dir [File -> (Seq String)])
+(ann ^:no-check me.raynes.fs/base-name [File -> String])
+(ann ^:no-check me.raynes.fs/directory? [File -> Boolean])

@@ -51,6 +51,7 @@
   [& args]
   (apply git* args))
 
+(ann git-repo? [File -> Boolean])
 (defn git-repo?
   "Checks if the given directory has a .git directory in it."
   [dir]
@@ -127,6 +128,7 @@
                                  :repo-dir     repo-dir
                                  :sha-to-check sha-to-check})))))
 
+(ann git-branch-contains? [Repo Branch SHA -> Boolean])
 (defn git-branch-contains?
   "Checks if the branch in the given repo contains the given SHA."
   [repo-dir branch-name sha-to-check]
